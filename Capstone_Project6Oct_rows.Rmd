@@ -1,0 +1,519 @@
+---
+title: "Capstone Project - WVS Viz"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme:  simplex
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+
+library(flexdashboard)
+library(shiny)
+library(plotly)
+library(tidyverse)
+library(dplyr)
+library(tibble)
+library(ggridges)
+library(ggplot2)
+library(RColorBrewer)
+library(ggthemes)
+library(shinythemes)
+
+```
+
+
+```{r data_import, include=FALSE, cache=FALSE}
+# setwd("/Users/lasmi/Documents/R learning/Capstone Project")
+dat <- read_csv("WVS_Cross-National_Wave_7_csv_v2_0_trim.csv") 
+dat<-tibble(dat)
+
+dat <- dat %>% 
+    rename(Country = B_COUNTRY_ALPHA) %>% 
+    mutate(Country = case_when(
+        Country =="AND"~ "Andorra",
+        Country =="ARG"~ "Argentina",
+        Country =="AUS"~ "Australia",
+        Country =="BGD"~ "Bangladesh",
+        Country =="BOL"~ "Bolivia",
+        Country =="BRA"~ "Brazil",
+        Country =="CHL"~ "Chile",
+        Country =="CHN"~ "China",
+        Country =="COL"~ "Colombia",
+        Country =="CYP"~ "Cyprus",
+        Country =="ECU"~ "Ecuador",
+        Country =="EGY"~ "Egypt",
+        Country =="ETH"~ "Ethiopia",
+        Country =="DEU"~ "Germany",
+        Country =="GRC"~ "Greece",
+        Country =="GTM"~ "Guatemala",
+        Country =="HKG"~ "Hong Kong",
+        Country =="IDN"~ "Indonesia",
+        Country =="IRN"~ "Iran",
+        Country =="IRQ"~ "Iraq",
+        Country =="JPN"~ "Japan",
+        Country =="JOR"~ "Jordan",
+        Country =="KAZ"~ "Kazakhstan",
+        Country =="KGZ"~ "Kyrgyzstan",
+        Country =="LBN"~ "Lebanon",
+        Country =="MAC"~ "Macao",
+        Country =="MYS"~ "Malaysia",
+        Country =="MEX"~ "Mexico ",
+        Country =="MMR"~ "Myanmar",
+        Country =="NZL"~ "New Zealand ",
+        Country =="NIC"~ "Nicaragua",
+        Country =="NGA"~ "Nigeria",
+        Country =="PAK"~ "Pakistan",
+        Country =="PER"~ "Peru",
+        Country =="PHL"~ "Philippines",
+        Country =="PRI"~ "Puerto Rico",
+        Country =="ROU"~ "Romania",
+        Country =="RUS"~ "Russian Federation",
+        Country =="SRB"~ "Serbia",
+        Country =="KOR"~ "South Korea",
+        Country =="TWN"~ "Taiwan",
+        Country =="TJK"~ "Tajikistan",
+        Country =="THA"~ "Thailand",
+        Country =="TUN"~ "Tunisia",
+        Country =="TUR"~ "Turkey",
+        Country =="UKR"~ "Ukraine",
+        Country =="USA"~ "United States",
+        Country =="VNM"~ "Vietnam",
+        Country =="ZWE"~ "Zimbabwe",
+        Country =="CAN"~ "Canada",
+        Country =="SGP"~ "Singapore"
+    ))
+
+    
+# Subsetting data for figure 1
+fig_dat1 <- dat %>% 
+    select(Q46,Q49, Country)
+    
+
+# Removing non-answers and N/A from the item scale
+excl <- c(-1,-2,-4,-5)
+
+fig_dat1 <- fig_dat1 %>% 
+    subset(!Q46 %in% excl) %>% 
+    subset(!Q49 %in% excl) 
+
+# Reversing Happiness score
+fig_dat1r <- fig_dat1 %>% 
+  mutate(Q46 = recode(Q46, 
+                      `1`=4,
+                      `2`=3,
+                      `3`=2,
+                      `4`=1))
+
+# # Making an index for happiness and satisfaction for each person
+# fig_dat1r <- fig_dat1 %>% 
+#     mutate(hapsat = Q46*Q49) 
+
+# Calculating average country's happiness to be the key in ranking the ridgelines
+mean_h <- fig_dat1r %>% 
+    group_by(Country) %>% 
+    summarise(mean_h = mean(Q46)) %>% 
+    mutate(ranking_h = rank(mean_h)) 
+  
+mean_s <- fig_dat1r %>% 
+    group_by(Country) %>% 
+    summarise(mean_s = mean(Q49)) %>% 
+    mutate(ranking_s = rank(mean_s))
+
+mean <- left_join(mean_h, mean_s, by="Country")
+
+fig_dat1r <- left_join(fig_dat1r,mean)
+    # select(-Q46, -Q49, -hapsat) %>% 
+    # distinct(mean, ranking)
+
+
+
+```
+
+General Chart
+======
+In this visualization project, we are going to explore Happiness, Satisfaction, and Trust towards others in different Countries. This data is taken from World Value Survey Wave 7. This is the most recent data collection, Wave 7 that was conducted from 2017 through 2020. It covers almost all countries in the world. It is freely accessible through this link: https://www.worldvaluessurvey.org/WVSContents.jsp.
+
+Column 1
+---------------------------------------------------------------
+### Chart General
+
+```{r}
+fig_dat1r$ranking_all <- fig_dat1r$ranking_h+fig_dat1r$ranking_s
+
+# Reorder the data
+fig_dat1lol <- fig_dat1r %>% 
+  distinct(ranking_all, Country) %>% 
+  arrange(ranking_all) %>% 
+  mutate(Country = factor(Country, levels = Country))
+  
+
+fig_dat1lol %>% 
+  ggplot(aes(x=Country, y=ranking_all))+
+    geom_segment(aes(xend=Country, yend=0), color="skyblue")+
+    geom_point(color="blue",size=3, alpha=0.6)+
+    coord_flip() +
+    theme_minimal()+
+    labs(title = "You might want to consider living in Kyrgyzstan",
+         subtitle = "Countries sorted from Happiest and Highest Satisfaction")+
+    theme(
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank()
+    )
+
+```
+
+Column 2
+---------------------------------------------------------------
+### How trusting are the citizens to other people?
+
+``` {r figdat2}
+   
+# Subsetting data for figure 
+fig_dat2 <- dat %>% 
+    select(Q57:Q63, Country, H_URBRURAL) #Trust variables, Country, and Urban-Rural Settlement Type
+
+# Removing non-answers and N/A from the item scale
+fig_dat2 <- fig_dat2 %>% 
+    subset(!Q57 %in% excl) %>% 
+    subset(!Q58 %in% excl) %>% 
+    subset(!Q59 %in% excl) %>% 
+    subset(!Q60 %in% excl) %>% 
+    subset(!Q61 %in% excl) %>% 
+    subset(!Q62 %in% excl) %>% 
+    subset(!Q63 %in% excl) %>% 
+    subset(!H_URBRURAL %in% excl) %>% 
+  as.data.frame()
+
+# Renaming variables
+colnames(fig_dat2) <- c("general", "t1_family", "t1_neighbor", "t2_pprsnl", "t2_pfirst", "t3_pothrel", "t3_pothnat", "country","urbral")
+
+# fig_dat2$mean_t <- (fig_dat2$t1_family+
+#                     fig_dat2$t1_neighbor+
+#                     fig_dat2$t2_pprsnl+
+#                     fig_dat2$t2_pfirst+
+#                     fig_dat2$t3_pothnat+
+#                     fig_dat2$t3_pothrel
+# )
+
+# Recode Reverse Item of Trust
+
+variables <- c("t1_family",
+              "t1_neighbor",
+              "t2_pprsnl",
+              "t2_pfirst",
+              "t3_pothnat",
+              "t3_pothrel"
+              )
+
+fig_dat2[variables] <- lapply(fig_dat2[variables], function(x)
+    recode(x, 
+           `1` = 4,
+           `2` = 3, 
+           `3` = 2, 
+           `4` = 1
+           )) 
+
+# Index of each item 
+fig_dat2$mean_p <- (fig_dat2$t1_family*
+                    fig_dat2$t1_neighbor*
+                    fig_dat2$t2_pprsnl*
+                    fig_dat2$t2_pfirst*
+                    fig_dat2$t3_pothnat*
+                    fig_dat2$t3_pothrel
+)
+
+
+
+
+fig_dat2g <- fig_dat2 %>% 
+  group_by(country) %>% 
+  summarise(mean = mean(mean_p))
+
+fig_dat2g <- fig_dat2g %>% arrange(mean)
+
+library(treemapify)
+ggplot(fig_dat2g, aes(area=mean, fill=mean, label=country))+
+  geom_treemap()+
+  geom_treemap_text(colour = "white",
+                    place = "centre")+
+  guides(fill= "none")+
+  labs(title = "New Zealand people are very trusting",
+       subtitle = "Countries that are most trusting (biggest) to least trusting (smallest)")
+
+
+```
+
+Happiness & Satisfaction
+======
+Happiness and satisfaction are measured through different items. Happines score ranges in 4-point scale while Satisfaction ranges in 10-point scale.
+
+Column A
+-----------------------------------------------
+
+### Happiness
+
+```{r chart A}
+# Ridgeline Happiness
+ggplot(fig_dat1r, aes(x=Q46, y=fct_reorder(Country, ranking_h),
+                     fill=ranking_h))+
+    geom_density_ridges_gradient(alpha=0.2, scale=2)+
+    scale_fill_viridis_c()+
+    # scale_y_discrete(expand = c(0.01,0))+
+    # scale_x_continuous(expand=c(0.02,0))+
+    theme_ridges(font_size=9,grid = FALSE, center_axis_labels = TRUE)+
+    theme(legend.position="none")+
+    xlab("Happiness Score")+
+    ylab("Country")+
+    labs(title="Kyrgyztan's People Indicate Highest Feeling of Happiness", 
+         subtitle="Taking all things together, would you say you are not at all happy -> very happy", caption="Source: World Value Survey wave 7 (2017-2020)")
+    
+```
+
+
+Column B
+-----------------------------------------------
+### Satisfaction
+
+```{r chart B}
+# Ridgeline Satisfaction
+ggplot(fig_dat1r, aes(x=Q49, y=fct_reorder(Country, ranking_s),
+                     fill=ranking_s))+
+    geom_density_ridges_gradient(alpha=0.2, scale=2)+
+    scale_fill_viridis_c()+
+    theme_ridges(font_size=9,grid = FALSE, center_axis_labels = TRUE)+
+    theme(legend.position="none")+
+    xlab("Satisfaction Score")+
+    ylab("Country")+
+    labs(title="Puerto Rico has its citizen the Highest Satisfaction of Life", 
+         subtitle="All things considered, how satisfied are you with your life as a whole these days?
+", caption="Source: World Value Survey wave 7 (2017-2020)")
+
+```
+
+Trust in Others
+======
+
+Column C {.sidebar}
+-----------------------------------------------
+
+```{r input2}
+
+countries <- unique(fig_dat2$country)
+selectInput("my_country", label="Choose Country",
+            choices= countries,
+            selected= NULL
+            )
+```
+
+Row {.tabset .tabset-fade}
+-----------------------------------------------
+It is also interesting to see how different the trust score across different parties in specific country. Will family be more trusted than neighbor? Or maybe will people from another religion be more trusted than people from another country?
+**You can select the country to see the specific score for each one.**
+
+### Family and Neighbor
+```{r chart D}
+ 
+
+# Recode Urban Rural
+fig_dat2 <- fig_dat2 %>% 
+  mutate(urbral = recode(urbral, 
+                         `1`="urban",
+                         `2`="rural"
+                         ))
+
+# Creating facet for different trust variables
+# family vs neighbor
+fig_dat2_fn <- fig_dat2 %>% 
+  pivot_longer(cols = starts_with("t1_"),
+               names_to = "trust",
+               names_prefix = "t1_",
+               values_to = "score"
+  )
+
+# Assigning factor level for better legend in facet wrap
+fig_dat2_fn$trust <-as.factor(fig_dat2_fn$trust)
+levels(fig_dat2_fn$trust) <-  c("Family", "Neighborhood") 
+
+renderPlot({
+  ggplot(filter(fig_dat2_fn, country == input$my_country), aes(x=score))+
+    geom_bar()+
+    facet_wrap(~trust)+
+    theme_few()+
+    labs(title = "Trust in Family and Neighbor", subtitle = "...could you tell me for each whether you trust people from this group completely, somewhat, not very much or not at all?")+
+    xlab("1 = Do not trust at all, 4 = Trust completely")+
+    ylab("Count")
+})
+
+
+```
+
+
+### Know personally and Meet at the first time
+```{r chart E}
+
+# Creating facet for different trust variables
+
+fig_dat2_pf <- fig_dat2 %>% 
+  pivot_longer(cols = starts_with("t2_"),
+               names_to = "trust",
+               names_prefix = "t2_",
+               values_to = "score"
+  ) 
+
+# Assigning factor level for better legend in facet wrap
+fig_dat2_pf$trust <-as.factor(fig_dat2_pf$trust)
+levels(fig_dat2_pf$trust) <-  c("Meet at 1st time", "Know personally") 
+
+renderPlot({
+  ggplot(filter(fig_dat2_pf, country == input$my_country), aes(x=score), fill=score)+
+    geom_bar()+
+    facet_wrap(~trust)+
+    theme_few()+
+    labs(title = "Trust in people you know personally and meet at the first time", subtitle = "...could you tell me for each whether you trust people from this group completely, somewhat, not very much or not at all?")+
+    xlab("1 = Do not trust at all, 4 = Trust completely")+
+    ylab("Count")
+})
+```
+
+
+### Another religion and Another nationality
+```{r chart F}
+
+# Creating facet for different trust variables
+
+fig_dat2_rn <- fig_dat2 %>% 
+  pivot_longer(cols = starts_with("t3_"),
+               names_to = "trust",
+               names_prefix = "t3_",
+               values_to = "score"
+  )
+
+# Assigning factor level for better legend in facet wrap
+fig_dat2_rn$trust <- as.factor(fig_dat2_rn$trust)
+levels(fig_dat2_rn$trust) <-  c("from another Nationality", "from another Religion") 
+
+renderPlot({
+  ggplot(filter(fig_dat2_rn, country == input$my_country), aes(x=score), fill=score)+
+    geom_bar()+
+    facet_wrap(~trust)+
+    theme_few()+
+    labs(title = "Trust in people from another religion and another nationality", subtitle = "...could you tell me for each whether you trust people from this group completely, somewhat, not very much or not at all?")+
+    xlab("1 = Do not trust at all, 4 = Trust completely")+
+    ylab("Count")
+})
+```
+
+
+Satisfaction x Trust
+======
+Trust index is computed by multiplying each trust variables (Family, Neighbor, Meet in the 1st time, Know personally, Other Religion, and Other Nationality). **Higher Mean Trust Index score** means **more trusting**. The hypothesis is that higher satisfaction would correlate with higher trust, since it's a safe to live with satisfaction, generally people would be more trusting. Looking at these figures, that might be the case for both 10 Most Trusting and Least Trusting Countries.
+
+Column C 
+-----------------------------------------------
+
+### Least Trusting Countries
+
+```{r input1}
+# Subsetting data for figure 1
+
+fig_dat3 <- dat %>% 
+    select(Q46,Q49,Q57:Q63, Country) %>% 
+    mutate(id = seq(c(1:nrow(dat))))
+
+
+# Removing non-answers and N/A from the item scale
+excl <- c(-1,-2,-4,-5)
+
+fig_dat3 <- fig_dat3 %>% 
+    subset(!Q46 %in% excl) %>% 
+    subset(!Q49 %in% excl) %>% 
+    subset(!Q57 %in% excl) %>% 
+    subset(!Q58 %in% excl) %>% 
+    subset(!Q59 %in% excl) %>% 
+    subset(!Q60 %in% excl) %>% 
+    subset(!Q61 %in% excl) %>% 
+    subset(!Q62 %in% excl) %>% 
+    subset(!Q63 %in% excl) 
+
+colnames(fig_dat3) <- c("happiness", "satisfaction", "general", "t1_family", "t1_neighbor",  "t2_pprsnl", "t2_pfirst", "t3_pothrel", "t3_pothnat", "country","id")
+
+# Recode reverse item in Trust
+variables <- c("t1_family",
+              "t1_neighbor",
+              "t2_pprsnl",
+              "t2_pfirst",
+              "t3_pothnat",
+              "t3_pothrel"
+              )
+
+fig_dat3[variables] <- lapply(fig_dat3[variables], function(x)
+    recode(x, 
+           `1` = 4,
+           `2` = 3, 
+           `3` = 2, 
+           `4` = 1
+           )) 
+
+# calculating index
+fig_dat3$mean_p <- (fig_dat3$t1_family*
+                    fig_dat3$t1_neighbor*
+                    fig_dat3$t2_pprsnl*
+                    fig_dat3$t2_pfirst*
+                    fig_dat3$t3_pothnat*
+                    fig_dat3$t3_pothrel
+)
+
+fig_dat3rank <- fig_dat3 %>% 
+  group_by(country) %>% 
+  summarise(mean = mean(mean_p))
+
+fig_dat3g <- fig_dat3 %>% 
+  group_by(country, satisfaction) %>% 
+  summarise(mean = mean(mean_p))
+
+fig_dat3rank <- fig_dat3g %>% arrange(mean)
+
+#Pick bottom 10
+fig_dat3gbot <- fig_dat3rank[1:10,]
+
+#Pick top 10
+fig_dat3gtop <- fig_dat3rank[42:51,] %>%  arrange(rev(mean))
+
+
+
+# Countries with highest trust index
+least <- ggplot(filter(fig_dat3g, country %in% fig_dat3gtop$country) , aes(x=satisfaction, y=mean, color=country))+
+  geom_point()+
+  geom_smooth(se=FALSE)+
+  xlab("Satisfaction (1-10)")+
+  ylab("Mean Trust Index")+
+  guides(color = guide_legend(title="Country"))+
+  theme_minimal()
+
+ggplotly(least)
+```
+
+Column C 
+-----------------------------------------------
+### Most Trusting Countries
+```{r column c}
+### Most Trusting Countries
+# Countries with lowest trust index
+most <- ggplot(filter(fig_dat3g, country %in% fig_dat3gbot$country) , aes(x=satisfaction, y=mean, color=country))+
+  geom_point()+
+  geom_smooth(se=FALSE)+
+  xlab("Satisfaction (1-10)")+
+  ylab("Mean Trust Index")+
+  guides(color = guide_legend(title="Country"))+
+  theme_minimal()
+
+ggplotly(most)
+
+
+```
